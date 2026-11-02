@@ -1,3 +1,11 @@
+# Unreleased
+
+## Fixes
+
+- Fixed geom collision masks being lost when converting MuJoCo models ([#10](https://github.com/newton-physics/mujoco-usd-converter/issues/10))
+  - Colliders now preserve exact signed `contype` and `conaffinity` values, including defaults, in custom integer `mjc:contype` and `mjc:conaffinity` attributes pending a schema proposal
+  - Consumers can use these masks to apply MuJoCo's asymmetric collision eligibility rule without expanding masks into quadratic filtered-pair relationships; explicit body excludes are unchanged
+
 # 0.7.0
 
 ## Fixes

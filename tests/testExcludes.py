@@ -132,9 +132,7 @@ class TestExcludes(ConverterTestCase):
             if model.geom_bodyid[i] == model.geom_bodyid[j]:
                 continue
             bodies = {model.body(int(model.geom_bodyid[k])).name for k in (i, j)}
-            eligible = (int(model.geom_contype[i]) & int(model.geom_conaffinity[j])) or (
-                int(model.geom_contype[j]) & int(model.geom_conaffinity[i])
-            )
+            eligible = (int(model.geom_contype[i]) & int(model.geom_conaffinity[j])) or (int(model.geom_contype[j]) & int(model.geom_conaffinity[i]))
             if eligible and bodies != {"a", "d"}:
                 expected.add((i, j))
             prim_i = stage.GetPrimAtPath(paths[i])
@@ -143,8 +141,7 @@ class TestExcludes(ConverterTestCase):
                 prim_j.GetAttribute("mjc:contype").Get() & prim_i.GetAttribute("mjc:conaffinity").Get()
             )
             if usd_eligible and not any(
-                (paths[i].HasPrefix(source) and paths[j].HasPrefix(target))
-                or (paths[j].HasPrefix(source) and paths[i].HasPrefix(target))
+                (paths[i].HasPrefix(source) and paths[j].HasPrefix(target)) or (paths[j].HasPrefix(source) and paths[i].HasPrefix(target))
                 for source, target in filters
             ):
                 actual.add((i, j))

@@ -2,9 +2,16 @@
 
 ## Fixes
 
+- Fixed bodies welded to the MuJoCo world being converted into finite-mass rigid bodies
+  - Jointless bodies with no moving or mocap ancestor now remain static USD collider hierarchies, without `RigidBodyAPI` or redundant fixed joints
+  - This preserves zero-density trellis wires as static geometry; authoring USD mass or density zero instead would request inferred mass, not disable it
+  - Static body Xforms no longer receive inapplicable `MassAPI`; explicit and inferred body mass/inertia remain authored only for rigid bodies
+  - Body/site paths and local equality frames remain intact, including under transformed USD references; dynamic welded children and mocap hierarchies retain their rigid bodies
+  - Contact exclusions involving static bodies target only their own collider geoms, preserving exclusions without filtering descendant bodies; dynamic endpoints retain compact rigid-body targets
+
 - Fixed geom collision masks being lost when converting MuJoCo models ([#10](https://github.com/newton-physics/mujoco-usd-converter/issues/10))
   - Colliders now preserve exact signed `contype` and `conaffinity` values, including defaults, in custom integer `mjc:contype` and `mjc:conaffinity` attributes pending a schema proposal
-  - Consumers can use these masks to apply MuJoCo's asymmetric collision eligibility rule without expanding masks into quadratic filtered-pair relationships; explicit body excludes are unchanged
+  - Consumers can use these masks to apply MuJoCo's asymmetric collision eligibility rule without expanding masks into quadratic filtered-pair relationships; explicit exclusions remain separate
 
 # 0.7.0
 

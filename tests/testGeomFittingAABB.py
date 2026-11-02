@@ -37,8 +37,8 @@ class TestGeomFittingAABB(ConverterTestCase):
         self.assertTrue(prim)
         self.assertTrue(prim.IsA(UsdGeom.Xform))
 
-        # Since type="ellipsoid" should not have been generated, there are two child prims: "complex_cube" and "PhysicsFixedJoint".
-        self.assertEqual(len(prim.GetChildren()), 2)
+        # The world-welded body has only its visual child, with no redundant fixed joint.
+        self.assertEqual(len(prim.GetChildren()), 1)
 
         prim_path = f"{default_prim.GetPath()}/Geometry/fitting_ellipsoid_no_transform/ellipsoid_visual"
         prim = self.stage.GetPrimAtPath(prim_path)

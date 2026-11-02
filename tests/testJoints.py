@@ -3,7 +3,7 @@
 import math
 import pathlib
 
-from pxr import Gf, Sdf, Usd, UsdPhysics
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 import mujoco_usd_converter
 from tests.util.ConverterTestCase import ConverterTestCase
@@ -46,7 +46,7 @@ class TestJoints(ConverterTestCase):
 
         # first hinge is aligned with the x-axis
         body1 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/hinge_joints/Geometry/body1"))
-        self.assertTrue(body1)
+        self.assertFalse(body1)
         self.assertTrue(body1.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body1.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -71,7 +71,7 @@ class TestJoints(ConverterTestCase):
 
         # second hinge is aligned with the y-axis
         body3 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/hinge_joints/Geometry/body3"))
-        self.assertTrue(body3)
+        self.assertFalse(body3)
         self.assertTrue(body3.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body3.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -150,7 +150,7 @@ class TestJoints(ConverterTestCase):
 
         # first slide is aligned with the x-axis
         body1 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/slide_joints/Geometry/body1"))
-        self.assertTrue(body1)
+        self.assertFalse(body1)
         self.assertTrue(body1.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body1.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -175,7 +175,7 @@ class TestJoints(ConverterTestCase):
 
         # second hinge is aligned with the y-axis
         body3 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/slide_joints/Geometry/body3"))
-        self.assertTrue(body3)
+        self.assertFalse(body3)
         self.assertTrue(body3.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body3.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -227,7 +227,7 @@ class TestJoints(ConverterTestCase):
 
         # first ball joint is aligned with the x-axis
         body1 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/ball_joints/Geometry/body1"))
-        self.assertTrue(body1)
+        self.assertFalse(body1)
         self.assertTrue(body1.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body1.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -252,7 +252,7 @@ class TestJoints(ConverterTestCase):
 
         # second ball joint is aligned with the y-axis
         body3 = UsdPhysics.RigidBodyAPI(stage.GetPrimAtPath("/ball_joints/Geometry/body3"))
-        self.assertTrue(body3)
+        self.assertFalse(body3)
         self.assertTrue(body3.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI))
         self.assertTrue(body3.GetPrim().HasAPI("NewtonArticulationRootAPI"))
 
@@ -301,22 +301,15 @@ class TestJoints(ConverterTestCase):
         stage: Usd.Stage = Usd.Stage.Open(asset.path)
         self.assertIsValidUsd(stage)
 
-        # A body without an explicit MJC joint has a fixed joint in USD
+        # Bodies welded all the way to world are static Xforms, not rigid bodies
+        # joined to world. Their authored hierarchy still preserves both frames.
         body1_prim = stage.GetPrimAtPath("/fixed_vs_free_joints/Geometry/body1")
         body2_prim = stage.GetPrimAtPath("/fixed_vs_free_joints/Geometry/body1/body2")
-        joint_prim = stage.GetPrimAtPath("/fixed_vs_free_joints/Geometry/body1/body2/PhysicsFixedJoint")
-        self.assertTrue(joint_prim.IsA(UsdPhysics.FixedJoint))
-        fixed_joint = UsdPhysics.FixedJoint(joint_prim)
-        self.assertEqual(fixed_joint.GetBody0Rel().GetTargets(), [body1_prim.GetPath()])
-        self.assertEqual(fixed_joint.GetBody1Rel().GetTargets(), [body2_prim.GetPath()])
-        self.assertEqual(fixed_joint.GetLocalPos0Attr().Get(), Gf.Vec3f(0, 0.5, 0))
-        self.assertEqual(fixed_joint.GetLocalPos1Attr().Get(), Gf.Vec3f(0, 0, 0))
-        self.assertRotationsAlmostEqual(
-            fixed_joint.GetLocalRot0Attr().Get(),
-            Gf.Quatf(0.7071068286895752, Gf.Vec3f(0.0, 0.0, 0.7071067094802856)),
-            1e-6,
-        )
-        self.assertRotationsAlmostEqual(fixed_joint.GetLocalRot1Attr().Get(), Gf.Quatf(1, Gf.Vec3f(0, 0, 0)))
+        for prim in (body1_prim, body2_prim):
+            self.assertFalse(prim.HasAPI(UsdPhysics.RigidBodyAPI))
+            self.assertFalse(prim.HasAPI(UsdPhysics.ArticulationRootAPI))
+            self.assertFalse(any(child.IsA(UsdPhysics.Joint) for child in prim.GetChildren()))
+        self.assertEqual(UsdGeom.XformCache().GetLocalToWorldTransform(body2_prim).ExtractTranslation(), Gf.Vec3d(0, 0.5, 1))
 
         # A free floating body has no joint to world, but it is an articulation root
         # because its child body is connected by an implicit fixed joint.

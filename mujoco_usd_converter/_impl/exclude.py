@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 The Newton Developers
 # SPDX-License-Identifier: Apache-2.0
 
-from pxr import Tf, UsdPhysics
+from pxr import Tf, Usd, UsdPhysics
 
 from .data import ConversionData, Tokens
 
@@ -20,7 +20,20 @@ def convert_excludes(data: ConversionData):
         body1 = data.references[Tokens.PhysicsBodies][exclude.bodyname1].GetPrim()
         body2 = data.references[Tokens.PhysicsBodies][exclude.bodyname2].GetPrim()
 
-        # Add the UsdPhysicsFilgeredPairsAPI to the first body
-        UsdPhysics.FilteredPairsAPI.Apply(body1)
-        filtered_pairs_api = UsdPhysics.FilteredPairsAPI(body1)
-        filtered_pairs_api.GetFilteredPairsRel().AddTarget(body2.GetPath())
+        # FilteredPairsAPI targets colliders or rigid bodies, not arbitrary
+        # static body frames. Expand only that MJCF body's own colliders: a
+        # descendant body has separate contact-exclusion semantics.
+        for source in get_exclude_targets(body1):
+            for target in get_exclude_targets(body2):
+                filtered_pairs_api = UsdPhysics.FilteredPairsAPI.Apply(source)
+                filtered_pairs_api.GetFilteredPairsRel().AddTarget(target.GetPath())
+
+
+def get_exclude_targets(body: Usd.Prim) -> list[Usd.Prim]:
+    # Physics content consists of overrides, so include undefined children.
+    colliders = [child for child in body.GetAllChildren() if child.HasAPI(UsdPhysics.CollisionAPI)]
+    if not colliders:
+        return []
+    if body.HasAPI(UsdPhysics.RigidBodyAPI):
+        return [body]
+    return colliders

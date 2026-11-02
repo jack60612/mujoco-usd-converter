@@ -9,7 +9,7 @@ import usdex.test
 from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics
 
 import mujoco_usd_converter
-from mujoco_usd_converter._impl.body import bake_body_mass, get_model_body_id
+from mujoco_usd_converter._impl.body import bake_body_mass, get_model_body_id, has_articulated_descendants, is_world_welded
 from mujoco_usd_converter._impl.data import ConversionData
 from tests.util.ConverterTestCase import ConverterTestCase
 
@@ -26,7 +26,7 @@ class TestBodies(ConverterTestCase):
         # Root body is an Articulation Root
         prim = self.stage.GetPrimAtPath("/bodies/Geometry/root_body")
         self.assertTrue(prim.HasAPI(UsdPhysics.ArticulationRootAPI))
-        self.assertTrue(prim.HasAPI(UsdPhysics.RigidBodyAPI))
+        self.assertFalse(prim.HasAPI(UsdPhysics.RigidBodyAPI))
 
         # Nested Body is not an articulation root
         prim = self.stage.GetPrimAtPath("/bodies/Geometry/root_body/nested_body")
@@ -41,7 +41,7 @@ class TestBodies(ConverterTestCase):
         # Static Base is an articulation root as it has a descendant body with a non-free joint
         prim = self.stage.GetPrimAtPath("/bodies/Geometry/static_base")
         self.assertTrue(prim.HasAPI(UsdPhysics.ArticulationRootAPI))
-        self.assertTrue(prim.HasAPI(UsdPhysics.RigidBodyAPI))
+        self.assertFalse(prim.HasAPI(UsdPhysics.RigidBodyAPI))
 
         # regular_dynamic is not an articulation as it has no child bodies
         prim = self.stage.GetPrimAtPath("/bodies/Geometry/regular_dynamic")
@@ -245,11 +245,152 @@ class TestBodies(ConverterTestCase):
 
     def test_zero_inertia(self):
         zero_inertia_prim: Usd.Prim = self.stage.GetPrimAtPath("/bodies/Geometry/zero_inertia")
-        self.assertTrue(zero_inertia_prim.HasAPI(UsdPhysics.RigidBodyAPI))
-        self.assertTrue(zero_inertia_prim.HasAPI(UsdPhysics.MassAPI))
+        self.assertFalse(zero_inertia_prim.HasAPI(UsdPhysics.RigidBodyAPI))
+        # Static body frames are neither rigid bodies nor colliders, so MassAPI
+        # is inapplicable even when the source has explicit inertial metadata.
+        self.assertFalse(zero_inertia_prim.HasAPI(UsdPhysics.MassAPI))
         self.assertFalse(zero_inertia_prim.HasAPI("NewtonMassAPI"))
-        mass_api = UsdPhysics.MassAPI(zero_inertia_prim)
-        self.assertAlmostEqual(mass_api.GetMassAttr().Get(), 2.0)
-        self.assertEqual(mass_api.GetCenterOfMassAttr().Get(), Gf.Vec3f(0.1, 0.2, 0.3))
-        self.assertFalse(mass_api.GetPrincipalAxesAttr().HasAuthoredValue())
-        self.assertFalse(mass_api.GetDiagonalInertiaAttr().HasAuthoredValue())
+
+
+class TestWorldWeldedBodies(ConverterTestCase):
+    """Staticness comes from MJCF ancestry, not from USD's zero-mass fallback."""
+
+    def setUp(self):
+        super().setUp()
+        source = pathlib.Path("./tests/data/world_welded_bodies.xml")
+        self.asset = mujoco_usd_converter.Converter().convert(source, self.tmpDir())
+        self.stage = Usd.Stage.Open(self.asset.path)
+        self.assertIsValidUsd(self.stage)
+        self.model = mujoco.MjModel.from_xml_path(str(source))
+        self.native = mujoco.MjData(self.model)
+        mujoco.mj_forward(self.model, self.native)
+        self.root = "/world_welded_bodies/Geometry"
+
+    def test_zero_density_wire_is_static_not_inferred_mass(self):
+        for name in ("support", "support/e0_wire0"):
+            body = self.stage.GetPrimAtPath(f"{self.root}/{name}")
+            self.assertTrue(body.IsA(UsdGeom.Xform))
+            self.assertFalse(body.HasAPI(UsdPhysics.RigidBodyAPI))
+            self.assertFalse(body.HasAPI(UsdPhysics.MassAPI))
+            self.assertFalse(any(child.IsA(UsdPhysics.FixedJoint) for child in body.GetChildren()))
+        wire = self.stage.GetPrimAtPath(f"{self.root}/support/e0_wire0/wire_geom")
+        self.assertTrue(wire.HasAPI(UsdPhysics.CollisionAPI))
+        self.assertEqual(wire.GetAttribute("mjc:contype").Get(), 2)
+        self.assertEqual(wire.GetAttribute("mjc:conaffinity").Get(), 1)
+        # No dynamic ancestor means this collider cannot accumulate fallback mass.
+        ancestor = wire
+        while ancestor:
+            self.assertFalse(ancestor.HasAPI(UsdPhysics.RigidBodyAPI))
+            ancestor = ancestor.GetParent()
+        native_wire = self.model.body("e0_wire0")
+        self.assertEqual(float(native_wire.mass[0]), 0.0)
+        np.testing.assert_array_equal(native_wire.inertia, np.zeros(3))
+        self.assertEqual(int(self.model.body_weldid[native_wire.id]), 0)
+        # Positive density does not make a world-welded support dynamic either.
+        self.assertGreater(float(self.model.body("support").mass[0]), 0.0)
+
+    def test_moving_and_mocap_ancestors_keep_rigid_bodies(self):
+        for name in ("branch", "branch/welded_child", "support/hinged", "mocap", "mocap/mocap_child"):
+            body = self.stage.GetPrimAtPath(f"{self.root}/{name}")
+            self.assertTrue(body.HasAPI(UsdPhysics.RigidBodyAPI))
+        child = self.stage.GetPrimAtPath(f"{self.root}/branch/welded_child/PhysicsFixedJoint")
+        self.assertTrue(child.IsA(UsdPhysics.FixedJoint))
+        for name in ("mocap", "mocap/mocap_child"):
+            body = self.stage.GetPrimAtPath(f"{self.root}/{name}")
+            self.assertTrue(UsdPhysics.RigidBodyAPI(body).GetKinematicEnabledAttr().Get())
+        for name, mass in (("branch", 2.0), ("branch/welded_child", 0.5)):
+            body = self.stage.GetPrimAtPath(f"{self.root}/{name}")
+            collider = next(child for child in body.GetChildren() if child.HasAPI(UsdPhysics.CollisionAPI))
+            self.assertAlmostEqual(UsdPhysics.MassAPI(collider).GetMassAttr().Get(), mass)
+            self.assertAlmostEqual(float(self.model.body(body.GetName()).mass[0]), mass)
+
+    def test_static_connect_endpoints_match_native_world_anchors(self):
+        xforms = UsdGeom.XformCache()
+        wire_site = self.model.site("e0_tie0_wire").id
+        branch_site = self.model.site("e0_tie0_branch").id
+        for name, static_side in (("tie", 1), ("tie_reversed", 0), ("body_tie", 1), ("body_tie_reversed", 0)):
+            joint = UsdPhysics.Joint(self.stage.GetPrimAtPath(f"/world_welded_bodies/Physics/{name}"))
+            relationships = (joint.GetBody0Rel(), joint.GetBody1Rel())
+            positions = (joint.GetLocalPos0Attr().Get(), joint.GetLocalPos1Attr().Get())
+            self.assertEqual(len(relationships[static_side].GetTargets()), 1)
+            self.assertEqual(len(relationships[1 - static_side].GetTargets()), 1)
+            if name in ("tie", "tie_reversed"):
+                expected = [self.native.site_xpos[branch_site], self.native.site_xpos[wire_site]]
+                if static_side == 0:
+                    expected.reverse()
+            else:
+                equality = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_EQUALITY, name)
+                body_ids = (self.model.eq_obj1id[equality], self.model.eq_obj2id[equality])
+                expected = [
+                    self.native.xpos[body_id] + self.native.xmat[body_id].reshape(3, 3) @ self.model.eq_data[equality, 3 * side : 3 * side + 3]
+                    for side, body_id in enumerate(body_ids)
+                ]
+            for side in (0, 1):
+                targets = relationships[side].GetTargets()
+                position = Gf.Vec3d(positions[side])
+                if targets:
+                    position = xforms.GetLocalToWorldTransform(self.stage.GetPrimAtPath(targets[0])).Transform(position)
+                np.testing.assert_allclose(position, expected[side], atol=1e-6, rtol=0)
+        # The original frame prim and relationship remain available.
+        self.assertTrue(self.stage.GetPrimAtPath(f"{self.root}/support/e0_wire0/e0_tie0_wire"))
+
+    def test_static_weld_and_hinge_frames_include_rotation(self):
+        xforms = UsdGeom.XformCache()
+        for name, side, frame_path in (
+            ("body_weld", 1, f"{self.root}/support/e0_wire0"),
+            ("site_weld", 0, f"{self.root}/support/e0_wire0/e0_tie0_wire"),
+        ):
+            joint = UsdPhysics.Joint(self.stage.GetPrimAtPath(f"/world_welded_bodies/Physics/{name}"))
+            relationship = (joint.GetBody0Rel(), joint.GetBody1Rel())[side]
+            position = (joint.GetLocalPos0Attr(), joint.GetLocalPos1Attr())[side]
+            rotation = (joint.GetLocalRot0Attr(), joint.GetLocalRot1Attr())[side]
+            world = xforms.GetLocalToWorldTransform(self.stage.GetPrimAtPath(frame_path))
+            self.assertEqual(relationship.GetTargets(), [Sdf.Path(frame_path)])
+            local = Gf.Matrix4d(Gf.Rotation(Gf.Quatd(rotation.Get())), Gf.Vec3d(position.Get()))
+            composed = local * world
+            self.assertTrue(Gf.IsClose(composed.ExtractTranslation(), world.ExtractTranslation(), 1e-6))
+            self.assertRotationsAlmostEqual(Gf.Quatf(composed.ExtractRotationQuat()), Gf.Quatf(world.ExtractRotationQuat()))
+        hinge = UsdPhysics.Joint(self.stage.GetPrimAtPath(f"{self.root}/support/hinged/hinge"))
+        self.assertEqual(hinge.GetBody0Rel().GetTargets(), [Sdf.Path(f"{self.root}/support")])
+        native_anchor = self.native.xanchor[self.model.joint("hinge").id]
+        support = self.stage.GetPrimAtPath(f"{self.root}/support")
+        anchor = xforms.GetLocalToWorldTransform(support).Transform(Gf.Vec3d(hinge.GetLocalPos0Attr().Get()))
+        np.testing.assert_allclose(anchor, native_anchor, atol=1e-6, rtol=0)
+
+    def test_static_site_frames_follow_transformed_usd_reference(self):
+        stage = Usd.Stage.CreateInMemory()
+        reference = UsdGeom.Xform.Define(stage, "/relocated")
+        reference.GetPrim().GetReferences().AddReference(self.asset.path)
+        placement = Gf.Matrix4d(Gf.Rotation(Gf.Vec3d(1, 0, 0), 37), Gf.Vec3d(4, -2, 1))
+        reference.AddTransformOp().Set(placement)
+        cache = UsdGeom.XformCache()
+        for name, side in (("tie", 1), ("tie_reversed", 0)):
+            joint = UsdPhysics.Joint(stage.GetPrimAtPath(f"/relocated/Physics/{name}"))
+            relationship = (joint.GetBody0Rel(), joint.GetBody1Rel())[side]
+            local = (joint.GetLocalPos0Attr(), joint.GetLocalPos1Attr())[side].Get()
+            self.assertEqual(relationship.GetTargets(), [Sdf.Path("/relocated/Geometry/support/e0_wire0/e0_tie0_wire")])
+            frame = stage.GetPrimAtPath(relationship.GetTargets()[0])
+            actual = cache.GetLocalToWorldTransform(frame).Transform(Gf.Vec3d(local))
+            expected = placement.Transform(Gf.Vec3d(*self.native.site_xpos[self.model.site("e0_tie0_wire").id]))
+            self.assertTrue(Gf.IsClose(actual, expected, 1e-6))
+
+
+class TestBodyAncestry(ConverterTestCase):
+    def test_world_root_terminates_without_reading_its_parent(self):
+        # MjsBody.parent on world is not a usable None sentinel. Exercise the
+        # world itself as well as paths that reach it from multiple levels.
+        spec = mujoco.MjSpec.from_string(
+            """<mujoco><worldbody>
+              <body name="static"><body name="nested"/></body>
+              <body name="moving"><freejoint/><body name="welded"/></body>
+              <body name="mocap" mocap="true"><body name="mocap_child"/></body>
+            </worldbody></mujoco>"""
+        )
+        world = spec.worldbody
+        self.assertTrue(is_world_welded(world, world))
+        for name in ("static", "nested"):
+            self.assertTrue(is_world_welded(spec.body(name), world))
+        for name in ("moving", "welded", "mocap", "mocap_child"):
+            self.assertFalse(is_world_welded(spec.body(name), world))
+        self.assertFalse(has_articulated_descendants(spec.body("static"), world))
+        self.assertTrue(has_articulated_descendants(spec.body("moving"), world))

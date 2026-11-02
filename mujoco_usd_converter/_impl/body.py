@@ -120,16 +120,18 @@ def convert_body(parent: Usd.Prim, name: str, body: mujoco.MjsBody, data: Conver
     if body != data.spec.worldbody:
         body_over = data.content[Tokens.Physics].OverridePrim(body_prim.GetPath())
         data.references[Tokens.PhysicsBodies][body.name] = body_over
-        rbd: UsdPhysics.RigidBodyAPI = UsdPhysics.RigidBodyAPI.Apply(body_over)
-        # when the parent body is kinematic, the child body must also be kinematic
-        if is_kinematic(body, body_over):
-            rbd.CreateKinematicEnabledAttr().Set(True)
+        world_welded = is_world_welded(body, data.spec.worldbody)
+        if not world_welded:
+            rbd: UsdPhysics.RigidBodyAPI = UsdPhysics.RigidBodyAPI.Apply(body_over)
+            # when the parent body is kinematic, the child body must also be kinematic
+            if is_kinematic(body, body_over):
+                rbd.CreateKinematicEnabledAttr().Set(True)
 
         # Store concept gaps as custom attributes
         if body.gravcomp != 0:
             body_over.CreateAttribute("mjc:body:gravcomp", Sdf.ValueTypeNames.Float, custom=True).Set(body.gravcomp)
 
-        if body.explicitinertial:
+        if not world_welded and body.explicitinertial:
             mass_api: UsdPhysics.MassAPI = UsdPhysics.MassAPI.Apply(body_over)
             mass_api.CreateMassAttr().Set(body.mass)
             mass_api.CreateCenterOfMassAttr().Set(convert_vec3d(body.ipos))
@@ -138,9 +140,8 @@ def convert_body(parent: Usd.Prim, name: str, body: mujoco.MjsBody, data: Conver
                 inertia = convert_vec3d(body.inertia)
             else:
                 quat, inertia = extract_inertia(body.fullinertia)
-            # If the inertia is zero, don't set the principal axes or diagonal inertia
-            # In MuJoCo this represents a body with no rotational inertia (typically a static base),
-            # and in USD the mass alone is sufficient — the physics engine will handle it
+            # Zero inertia is not a valid explicit USD inertia; leave it unauthored.
+            # World-welded bodies are static colliders, not zero-mass rigid bodies.
             if inertia != Gf.Vec3f(0, 0, 0):
                 # Decomposed path kept as fallback for apps that don't support newton:inertia
                 mass_api.CreatePrincipalAxesAttr().Set(quat)
@@ -148,21 +149,39 @@ def convert_body(parent: Usd.Prim, name: str, body: mujoco.MjsBody, data: Conver
                 if not np.isnan(body.fullinertia[0]):
                     body_over.ApplyAPI("NewtonMassAPI")
                     set_schema_attribute(body_over, "newton:inertia", Vt.DoubleArray.FromNumpy(body.fullinertia))
-        elif requires_mass_bake(body, data):
+        elif not world_welded and requires_mass_bake(body, data):
             bake_body_mass(body, body_over, data)
 
-        convert_joints(parent=body_over, body=body, data=data)
+        if not world_welded:
+            convert_joints(parent=body_over, body=body, data=data)
 
     safe_names = data.name_cache.getPrimNames(body_prim, [get_body_name(x) for x in body.bodies])
     for child_body, safe_name in zip(body.bodies, safe_names):
         child_body_prim = convert_body(parent=body_prim, name=safe_name, body=child_body, data=data)
-        if child_body_prim and body == data.spec.worldbody and has_articulated_descendants(child_body):
+        if child_body_prim and body == data.spec.worldbody and has_articulated_descendants(child_body, data.spec.worldbody):
             child_body_over = data.content[Tokens.Physics].OverridePrim(child_body_prim.GetPath())
             UsdPhysics.ArticulationRootAPI.Apply(child_body_over)
             child_body_over.ApplyAPI("NewtonArticulationRootAPI")
             set_schema_attribute(child_body_over, "newton:jointsAddMobility", True)
 
     return body_prim
+
+
+def is_world_welded(body: mujoco.MjsBody, worldbody: mujoco.MjsBody) -> bool:
+    """Whether a body is immovable through its entire ancestry.
+
+    MuJoCo bodies without joints are welded to their parent. In USD, colliders
+    without a rigid-body ancestor are static. Zero mass or density is not an
+    equivalent representation: USD treats those values as requests to infer mass.
+    Mocap bodies and their descendants must remain kinematic rigid bodies.
+    """
+    # The world body's parent is not a valid MjsBody in the MuJoCo bindings.
+    # Stop at the known world root rather than reading worldbody.parent.
+    while body != worldbody:
+        if body.joints or body.mocap:
+            return False
+        body = body.parent
+    return True
 
 
 def is_kinematic(body: mujoco.MjsBody, physics_prim: Usd.Prim) -> bool:
@@ -173,21 +192,21 @@ def is_kinematic(body: mujoco.MjsBody, physics_prim: Usd.Prim) -> bool:
     return kinematic_attr and kinematic_attr.Get()
 
 
-def has_articulated_descendants(body: mujoco.MjsBody) -> bool:
+def has_articulated_descendants(body: mujoco.MjsBody, worldbody: mujoco.MjsBody) -> bool:
     # Recursively check if this body has child bodies connected
     # by non-free joints or implicit fixed joints
     for child_body in body.bodies:
         # a child body without joints indicates a fully-constrained relationship,
         # which we do consider an articulation, as the USD equivalent will have
         # a PhysicsFixedJoint between the bodies
-        if not child_body.joints:
+        if not child_body.joints and not is_world_welded(child_body, worldbody):
             return True
         if child_body.joints:
             for joint in child_body.joints:
                 if joint.type != mujoco.mjtJoint.mjJNT_FREE:
                     return True
         # Recursively check all descendants until we find a body with non-free joints
-        if has_articulated_descendants(child_body):
+        if has_articulated_descendants(child_body, worldbody):
             return True
     return False
 

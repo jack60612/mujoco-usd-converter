@@ -11,12 +11,14 @@
     <worldbody>
         <!-- mass comes solely from a collider, so it is left to USD accumulation -->
         <body name="before">
+            <freejoint/>
             <geom type="sphere" size="0.1" mass="2.0"/>
             <attach model="child" body="visual_mass" prefix="attached_"/>
         </body>
 
         <!-- follows the attached subtree, so its compiled id is not its authored position -->
         <body name="after" pos="1 0 0">
+            <freejoint/>
             <geom type="box" size="0.1 0.1 0.1" contype="0" conaffinity="0" mass="9.0"/>
             <geom type="box" size="0.1 0.1 0.1" contype="1" conaffinity="1" mass="1.0"/>
         </body>

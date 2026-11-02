@@ -2,6 +2,9 @@
 
 ## Fixes
 
+- Fixed geom collision masks being lost when converting MuJoCo models ([#10](https://github.com/newton-physics/mujoco-usd-converter/issues/10))
+  - Colliders now preserve exact signed `contype` and `conaffinity` values, including defaults, in custom integer `mjc:contype` and `mjc:conaffinity` attributes pending a schema proposal
+  - Consumers can use these masks to apply MuJoCo's asymmetric collision eligibility rule without expanding masks into quadratic filtered-pair relationships; explicit body excludes are unchanged
 - Fixed meshes with `refpos` or `refquat` being displaced and rotated relative to MuJoCo
   - As in MuJoCo, `refpos` and `refquat` now define the frame that the mesh file's vertices are expressed in
   - The mesh points are authored as they appear in the mesh file, and the mesh transform moves them into the mesh frame

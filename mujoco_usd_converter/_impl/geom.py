@@ -3,7 +3,7 @@
 import mujoco
 import numpy as np
 import usdex.core
-from pxr import Gf, Tf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
+from pxr import Gf, Sdf, Tf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
 
 from .data import ConversionData, Tokens
 from .numpy import convert_color, convert_quatf, convert_vec3d
@@ -304,6 +304,11 @@ def apply_physics(geom_prim: Usd.Prim, geom: mujoco.MjsGeom, data: ConversionDat
     geom_over.ApplyAPI("NewtonCollisionAPI")
     geom_over.ApplyAPI("MjcCollisionAPI")
 
+    # Preserve exact signed masks until these attributes are available in MjcCollisionAPI.
+    # Author defaults too, so consumers need not infer missing mask values.
+    geom_over.CreateAttribute("mjc:contype", Sdf.ValueTypeNames.Int, custom=True).Set(geom.contype)
+    geom_over.CreateAttribute("mjc:conaffinity", Sdf.ValueTypeNames.Int, custom=True).Set(geom.conaffinity)
+
     # Set NewtonCollisionAPI attributes
     set_schema_attribute(geom_over, "newton:contactMargin", geom.margin)
     set_schema_attribute(geom_over, "newton:contactGap", geom.gap)
@@ -354,8 +359,6 @@ def apply_physics(geom_prim: Usd.Prim, geom: mujoco.MjsGeom, data: ConversionDat
     physics_material: UsdPhysics.MaterialAPI = acquire_physics_material(geom, data)
     if physics_material:
         usdex.core.bindPhysicsMaterial(geom_over, physics_material)
-
-    # FUTURE: collision filtering
 
 
 def acquire_physics_material(geom: mujoco.MjsGeom, data: ConversionData) -> UsdShade.Material:

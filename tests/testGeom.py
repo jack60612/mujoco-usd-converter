@@ -299,10 +299,10 @@ class TestGeom(ConverterTestCase):
         self.assertTrue(prim.HasAPI("MjcCollisionAPI"))
         self.assertFalse(prim.HasAPI("NewtonMassAPI"))
 
-        # Check that no MJC properties are authored (except solref, which is always authored for roundtrip fidelity)
+        # solref and collision masks are always authored for roundtrip fidelity.
         for property in prim.GetPropertiesInNamespace("mjc"):
-            if property.GetName() == "mjc:solref":
-                self.assertTrue(property.HasAuthoredValue(), "mjc:solref must always be authored")
+            if property.GetName() in ("mjc:solref", "mjc:contype", "mjc:conaffinity"):
+                self.assertTrue(property.HasAuthoredValue(), f"{property.GetName()} must always be authored")
             else:
                 self.assertFalse(property.HasAuthoredValue(), f"Property {property.GetName()} should not be authored")
 

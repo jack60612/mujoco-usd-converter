@@ -6,6 +6,7 @@
   <worldbody>
     <!-- the visual geom is outside this model's inertiagrouprange, so mass comes solely from the collider -->
     <body name="mount">
+      <freejoint/>
       <geom type="box" size="0.1 0.1 0.1" mass="1.0"/>
       <geom type="box" size="0.1 0.1 0.1" contype="0" conaffinity="0" group="3" mass="2.0"/>
       <attach model="child" body="visual_mass" prefix="attached_"/>

@@ -5,6 +5,7 @@
 <mujoco model="mass_bake_uncompilable">
     <worldbody>
         <body name="uncompilable">
+            <freejoint/>
             <geom type="box" name="visual" size="0.1 0.1 0.1" contype="0" conaffinity="0" mass="1.0"/>
             <geom type="box" name="degenerate" size="0 0.1 0.1" contype="1" conaffinity="1" mass="2.0"/>
         </body>

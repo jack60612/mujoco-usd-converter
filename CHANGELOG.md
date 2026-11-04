@@ -6,6 +6,11 @@
 
 ## Fixes
 
+- Fixed bodies welded to the MuJoCo world being converted into finite-mass rigid bodies
+  - Jointless bodies with no moving or mocap ancestor now remain static USD collider hierarchies, without `RigidBodyAPI` or redundant fixed joints
+  - Static body Xforms no longer receive inapplicable `MassAPI`; zero mass or density in USD would request inferred mass rather than disable it
+  - Body/site paths and local equality frames remain intact under transformed references; dynamic welded children and mocap hierarchies retain their rigid bodies
+  - Contact exclusions involving static bodies target only their own collider geoms, without filtering descendant bodies; dynamic endpoints retain compact rigid-body targets
 - Fixed meshes with `refpos` or `refquat` being displaced and rotated relative to MuJoCo
   - As in MuJoCo, `refpos` and `refquat` now define the frame that the mesh file's vertices are expressed in
   - The mesh points are authored as they appear in the mesh file, and the mesh transform moves them into the mesh frame

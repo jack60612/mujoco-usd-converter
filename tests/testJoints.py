@@ -132,14 +132,13 @@ class TestJoints(ConverterTestCase):
         self.assertEqual(joint.GetAxisAttr().Get(), UsdPhysics.Tokens.x)
         self.assertTrue(Gf.IsClose(joint.GetLocalPos0Attr().Get(), Gf.Vec3f(0, 1.1, 0.1), 1e-6))
         self.assertEqual(joint.GetLocalPos1Attr().Get(), Gf.Vec3f(0, 0.1, 0))
-        self.assertRotationsAlmostEqual(
-            Gf.Rotation(joint.GetLocalRot0Attr().Get()),
-            Gf.Rotation(Gf.Quatf(0.37174803, Gf.Vec3f(0.37174803, 0.6015009, 0.6015009))),
-        )
-        self.assertRotationsAlmostEqual(
-            Gf.Rotation(joint.GetLocalRot1Attr().Get()),
-            Gf.Rotation(Gf.Quatf(0.97324896, Gf.Vec3f(0, 0.22975293, 0))),
-        )
+        # Independently compose the source Euler (0, 90, 90) body rotation
+        # with the shortest X-to-(1, 0, -0.5) joint-axis alignment. Round only
+        # the resulting expected joint frames to their native Quatf storage.
+        body_rotation = Gf.Rotation(Gf.Vec3d.YAxis(), 90).GetQuat() * Gf.Rotation(Gf.Vec3d.ZAxis(), 90).GetQuat()
+        axis_alignment = Gf.Rotation(Gf.Vec3d.XAxis(), Gf.Vec3d(1, 0, -0.5)).GetQuat()
+        self.assertRotationsEquivalent(joint.GetLocalRot0Attr().Get(), Gf.Quatf(body_rotation * axis_alignment))
+        self.assertRotationsEquivalent(joint.GetLocalRot1Attr().Get(), Gf.Quatf(axis_alignment))
         self.assertAlmostEqual(joint.GetLowerLimitAttr().Get(), 0)
         self.assertAlmostEqual(joint.GetUpperLimitAttr().Get(), 90)
 

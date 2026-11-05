@@ -2,6 +2,9 @@
 
 ## Fixes
 
+- Preserve double-precision quaternions throughout transform composition, narrowing only the final USD orientation
+  - Avoids amplified near-identity angular errors and accumulated descendant position drift in articulated hierarchies
+
 - Fixed bodies welded to the MuJoCo world being converted into finite-mass rigid bodies
   - Jointless bodies with no moving or mocap ancestor now remain static USD collider hierarchies, without `RigidBodyAPI` or redundant fixed joints
   - This preserves zero-density trellis wires as static geometry; authoring USD mass or density zero instead would request inferred mass, not disable it

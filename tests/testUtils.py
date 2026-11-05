@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 The Newton Developers
 # SPDX-License-Identifier: Apache-2.0
-from pxr import Tf, Usd
+import mujoco
+import numpy as np
+from pxr import Gf, Tf, Usd, UsdGeom
 
-from mujoco_usd_converter._impl.utils import set_schema_attribute
+from mujoco_usd_converter._impl.utils import set_schema_attribute, set_transform
 from tests.util.ConverterTestCase import ConverterTestCase
 
 
@@ -51,3 +53,43 @@ class TestSetSchemaAttribute(ConverterTestCase):
 
         with self.assertRaises(Tf.ErrorException):
             set_schema_attribute(prim, "mjc:armature", "wrong type")
+
+
+class TestTransformPrecision(ConverterTestCase):
+
+    def test_near_identity_quaternion_is_narrowed_only_at_publication(self):
+        # This rotation previously changed its imaginary components by thousands
+        # of Float ulps when a Quatf went through Gf.Rotation's axis-angle form.
+        quat = np.array([0.9999867878864059, -0.00242414045865189, 0.00258696923225921, -0.00372225547969671])
+        quat /= np.linalg.norm(quat)
+        for orientation in ("body", "frame", "fromto"):
+            with self.subTest(orientation=orientation):
+                spec = mujoco.MjSpec()
+                stage = Usd.Stage.CreateInMemory()
+                prim = UsdGeom.Xform.Define(stage, "/Body")
+                if orientation == "frame":
+                    frame = spec.worldbody.add_frame(quat=quat)
+                    body = frame.add_body()
+                    expected = quat
+                elif orientation == "fromto":
+                    # The same near-identity axis rotation, represented by an
+                    # explicit capsule segment rather than an authored quat.
+                    body = spec.worldbody.add_geom(
+                        type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+                        size=[0.01, 0, 0],
+                        fromto=[0, 0, 0, 0.004848, -0.005174, 1],
+                    )
+                    axis = np.array(body.fromto[3:]) - np.array(body.fromto[:3])
+                    axis /= np.linalg.norm(axis)
+                    expected = np.array([1 + axis[2], -axis[1], axis[0], 0])
+                    expected /= np.linalg.norm(expected)
+                else:
+                    body = spec.worldbody.add_body(quat=quat)
+                    expected = quat
+                set_transform(prim, body, spec)
+                (orient,) = (op.Get() for op in prim.GetOrderedXformOps() if op.GetOpType() == UsdGeom.XformOp.TypeOrient)
+                self.assertIsInstance(orient, Gf.Quatf)
+                np.testing.assert_array_equal(
+                    np.array([orient.GetReal(), *orient.GetImaginary()], dtype=np.float32),
+                    expected.astype(np.float32),
+                )

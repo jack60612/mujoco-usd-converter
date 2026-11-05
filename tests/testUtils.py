@@ -97,3 +97,10 @@ class TestTransformPrecision(ConverterTestCase):
                 # roundoff scaled by the rotation, not a physical/angular tolerance.
                 roundoff = np.finfo(np.float64).eps * np.linalg.norm(expected[1:])
                 self.assertTrue(np.all(np.abs(actual[~nonzero]) <= roundoff))
+
+    def test_rotation_equivalence_oracle_preserves_angular_accuracy(self):
+        quarter_turn = Gf.Quatf(Gf.Rotation(Gf.Vec3d.ZAxis(), 90).GetQuat())
+        self.assertRotationsEquivalent(quarter_turn, -quarter_turn)
+        self.assertRotationsEquivalent(Gf.Rotation(Gf.Vec3d.ZAxis(), 90), Gf.Rotation(-Gf.Vec3d.ZAxis(), 270))
+        with self.assertRaises(AssertionError):
+            self.assertRotationsEquivalent(quarter_turn, Gf.Rotation(Gf.Vec3d.ZAxis(), 90.001))

@@ -89,7 +89,11 @@ class TestTransformPrecision(ConverterTestCase):
                 set_transform(prim, body, spec)
                 (orient,) = (op.Get() for op in prim.GetOrderedXformOps() if op.GetOpType() == UsdGeom.XformOp.TypeOrient)
                 self.assertIsInstance(orient, Gf.Quatf)
-                np.testing.assert_array_equal(
-                    np.array([orient.GetReal(), *orient.GetImaginary()], dtype=np.float32),
-                    expected.astype(np.float32),
-                )
+                actual = np.array([orient.GetReal(), *orient.GetImaginary()], dtype=np.float32)
+                nonzero = expected != 0
+                np.testing.assert_array_equal(actual[nonzero], expected.astype(np.float32)[nonzero])
+                # Matrix decomposition can leave cancellation residue on an
+                # analytically zero axis. Bound that residue by double arithmetic
+                # roundoff scaled by the rotation, not a physical/angular tolerance.
+                roundoff = np.finfo(np.float64).eps * np.linalg.norm(expected[1:])
+                self.assertTrue(np.all(np.abs(actual[~nonzero]) <= roundoff))

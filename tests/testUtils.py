@@ -100,7 +100,7 @@ class TestTransformPrecision(ConverterTestCase):
 
     def test_rotation_equivalence_oracle_preserves_angular_accuracy(self):
         quarter_turn = Gf.Quatf(Gf.Rotation(Gf.Vec3d.ZAxis(), 90).GetQuat())
-        self.assertRotationsEquivalent(quarter_turn, -quarter_turn)
-        self.assertRotationsEquivalent(Gf.Rotation(Gf.Vec3d.ZAxis(), 90), Gf.Rotation(-Gf.Vec3d.ZAxis(), 270))
+        self.assert_rotations_equivalent(quarter_turn, -quarter_turn)
+        self.assert_rotations_equivalent(Gf.Rotation(Gf.Vec3d.ZAxis(), 90), Gf.Rotation(-Gf.Vec3d.ZAxis(), 270))
         with self.assertRaises(AssertionError):
-            self.assertRotationsEquivalent(quarter_turn, Gf.Rotation(Gf.Vec3d.ZAxis(), 90.001))
+            self.assert_rotations_equivalent(quarter_turn, Gf.Rotation(Gf.Vec3d.ZAxis(), 90.001))

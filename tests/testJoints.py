@@ -132,13 +132,18 @@ class TestJoints(ConverterTestCase):
         self.assertEqual(joint.GetAxisAttr().Get(), UsdPhysics.Tokens.x)
         self.assertTrue(Gf.IsClose(joint.GetLocalPos0Attr().Get(), Gf.Vec3f(0, 1.1, 0.1), 1e-6))
         self.assertEqual(joint.GetLocalPos1Attr().Get(), Gf.Vec3f(0, 0.1, 0))
-        # Independently compose the source Euler (0, 90, 90) body rotation
-        # with the shortest X-to-(1, 0, -0.5) joint-axis alignment. Round only
-        # the resulting expected joint frames to their native Quatf storage.
+        # Independently compose source Euler (0, 90, 90) with the native axis
+        # convention: USDex normalizes its Vec3f axis before computing the angle.
+        # See usd-exchange v2.2.0 PhysicsJointAlgo.cpp getAxisAlignment /
+        # alignVectorToXAxis. Keeping this Float dot product matters at one ulp.
         body_rotation = Gf.Rotation(Gf.Vec3d.YAxis(), 90).GetQuat() * Gf.Rotation(Gf.Vec3d.ZAxis(), 90).GetQuat()
-        axis_alignment = Gf.Rotation(Gf.Vec3d.XAxis(), Gf.Vec3d(1, 0, -0.5)).GetQuat()
-        self.assertRotationsEquivalent(joint.GetLocalRot0Attr().Get(), Gf.Quatf(body_rotation * axis_alignment))
-        self.assertRotationsEquivalent(joint.GetLocalRot1Attr().Get(), Gf.Quatf(axis_alignment))
+        half_angle = math.acos(float(Gf.Vec3f(1, 0, -0.5).GetNormalized()[0])) / 2
+        axis_alignment = Gf.Quatd(math.cos(half_angle), 0, math.sin(half_angle), 0)
+        actual = joint.GetLocalRot0Attr().Get()
+        if actual.GetReal() < 0:
+            actual = -actual  # q and -q describe exactly the same rotation.
+        self.assertEqual(actual, Gf.Quatf(body_rotation * axis_alignment))
+        self.assertEqual(joint.GetLocalRot1Attr().Get(), Gf.Quatf(axis_alignment))
         self.assertAlmostEqual(joint.GetLowerLimitAttr().Get(), 0)
         self.assertAlmostEqual(joint.GetUpperLimitAttr().Get(), 90)
 

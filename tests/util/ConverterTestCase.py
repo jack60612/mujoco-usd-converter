@@ -19,7 +19,7 @@ class ConverterTestCase(usdex.test.TestCase):
         self.validationEngine.enable_rule(omni.asset_validator.AnchoredAssetPathsChecker)
         self.validationEngine.enable_rule(omni.asset_validator.SupportedFileTypesChecker)
 
-    def assertRotationsEquivalent(self, rot1: Gf.Rotation | Gf.Quatf | Gf.Quatd, rot2: Gf.Rotation | Gf.Quatf | Gf.Quatd, tolerance: float = 1e-6):
+    def assert_rotations_equivalent(self, rot1: Gf.Rotation | Gf.Quatf | Gf.Quatd, rot2: Gf.Rotation | Gf.Quatf | Gf.Quatd, tolerance: float = 1e-6):
         """Compare physical rotations, with an angular error bound in degrees.
 
         Normalize native quaternion components in double before measuring the

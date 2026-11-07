@@ -120,7 +120,9 @@ def convert_body(parent: Usd.Prim, name: str, body: mujoco.MjsBody, data: Conver
     if body != data.spec.worldbody:
         body_over = data.content[Tokens.Physics].OverridePrim(body_prim.GetPath())
         data.references[Tokens.PhysicsBodies][body.name] = body_over
-        world_welded = is_world_welded(body, data.spec.worldbody)
+        # Optional identity preservation uses native rigid bodies and fixed
+        # joints, not kinematic bodies (which would affect flexible descendants).
+        world_welded = is_world_welded(body, data.spec.worldbody) and body.name not in data.preserve_world_fixed_bodies
         if not world_welded:
             rbd: UsdPhysics.RigidBodyAPI = UsdPhysics.RigidBodyAPI.Apply(body_over)
             # when the parent body is kinematic, the child body must also be kinematic
@@ -158,7 +160,11 @@ def convert_body(parent: Usd.Prim, name: str, body: mujoco.MjsBody, data: Conver
     safe_names = data.name_cache.getPrimNames(body_prim, [get_body_name(x) for x in body.bodies])
     for child_body, safe_name in zip(body.bodies, safe_names):
         child_body_prim = convert_body(parent=body_prim, name=safe_name, body=child_body, data=data)
-        if child_body_prim and body == data.spec.worldbody and has_articulated_descendants(child_body, data.spec.worldbody):
+        if (
+            child_body_prim
+            and body == data.spec.worldbody
+            and has_articulated_descendants(child_body, data.spec.worldbody, data.preserve_world_fixed_bodies)
+        ):
             child_body_over = data.content[Tokens.Physics].OverridePrim(child_body_prim.GetPath())
             UsdPhysics.ArticulationRootAPI.Apply(child_body_over)
             child_body_over.ApplyAPI("NewtonArticulationRootAPI")
@@ -192,21 +198,25 @@ def is_kinematic(body: mujoco.MjsBody, physics_prim: Usd.Prim) -> bool:
     return kinematic_attr and kinematic_attr.Get()
 
 
-def has_articulated_descendants(body: mujoco.MjsBody, worldbody: mujoco.MjsBody) -> bool:
+def has_articulated_descendants(
+    body: mujoco.MjsBody, worldbody: mujoco.MjsBody, preserve_world_fixed_bodies: tuple[str, ...] = ()
+) -> bool:
     # Recursively check if this body has child bodies connected
     # by non-free joints or implicit fixed joints
     for child_body in body.bodies:
         # a child body without joints indicates a fully-constrained relationship,
         # which we do consider an articulation, as the USD equivalent will have
         # a PhysicsFixedJoint between the bodies
-        if not child_body.joints and not is_world_welded(child_body, worldbody):
+        if not child_body.joints and (
+            not is_world_welded(child_body, worldbody) or child_body.name in preserve_world_fixed_bodies
+        ):
             return True
         if child_body.joints:
             for joint in child_body.joints:
                 if joint.type != mujoco.mjtJoint.mjJNT_FREE:
                     return True
         # Recursively check all descendants until we find a body with non-free joints
-        if has_articulated_descendants(child_body, worldbody):
+        if has_articulated_descendants(child_body, worldbody, preserve_world_fixed_bodies):
             return True
     return False
 

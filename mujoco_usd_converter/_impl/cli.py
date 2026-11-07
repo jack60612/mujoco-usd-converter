@@ -51,7 +51,12 @@ def run() -> int:
     Tf.Status(f"Newton USD Schemas Version: {newton_usd_schemas.__version__}")
 
     try:
-        converter = Converter(layer_structure=not args.no_layer_structure, scene=not args.no_physics_scene, comment=args.comment)
+        converter = Converter(
+            layer_structure=not args.no_layer_structure,
+            scene=not args.no_physics_scene,
+            comment=args.comment,
+            preserve_world_fixed_bodies=tuple(args.preserve_world_fixed_body),
+        )
         if result := converter.convert(args.input_file, args.output_dir):
             Tf.Status(f"Created USD Asset: {result.path}")
             return 0
@@ -101,6 +106,13 @@ def __create_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Disable authoring a `UsdPhysics.Scene` prim with the `MjcPhysicsSceneAPI` as a sibling of the default prim",
+    )
+    parser.add_argument(
+        "--preserve-world-fixed-body",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Retain a named world-welded body's mass and identity using a native rigid body and fixed joint (repeatable)",
     )
     parser.add_argument(
         "--verbose",

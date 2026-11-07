@@ -32,9 +32,22 @@ class Converter:
         layer_structure: bool = True
         scene: bool = True
         comment: str = ""
+        preserve_world_fixed_bodies: tuple[str, ...] = ()
 
-    def __init__(self, layer_structure: bool = True, scene: bool = True, comment: str = ""):
-        self.params = self.Params(layer_structure=layer_structure, scene=scene, comment=comment)
+    def __init__(
+        self,
+        layer_structure: bool = True,
+        scene: bool = True,
+        comment: str = "",
+        *,
+        preserve_world_fixed_bodies: tuple[str, ...] = (),
+    ):
+        self.params = self.Params(
+            layer_structure=layer_structure,
+            scene=scene,
+            comment=comment,
+            preserve_world_fixed_bodies=tuple(preserve_world_fixed_bodies),
+        )
 
     def convert(self, input_file: str, output_dir: str) -> Sdf.AssetPath:
         """
@@ -65,6 +78,9 @@ class Converter:
 
         Tf.Status(f"Converting {input_path} into {output_path}")
         spec = mujoco.MjSpec.from_file(str(input_path.absolute()))
+        unknown = set(self.params.preserve_world_fixed_bodies) - {body.name for body in spec.bodies}
+        if unknown:
+            raise ValueError(f"Unknown preserved world-fixed bodies: {sorted(unknown)}")
 
         # Create the conversion data object
         data = ConversionData(
@@ -77,6 +93,7 @@ class Converter:
             name_cache=usdex.core.NameCache(),
             scene=self.params.scene,
             comment=self.params.comment,
+            preserve_world_fixed_bodies=self.params.preserve_world_fixed_bodies,
         )
 
         # setup the main output layer (which will become an asset interface later)

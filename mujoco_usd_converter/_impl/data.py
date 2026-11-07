@@ -36,6 +36,7 @@ class ConversionData:
     name_cache: usdex.core.NameCache
     scene: bool
     comment: str
+    preserve_world_fixed_bodies: tuple[str, ...] = ()
 
     def get_model(self) -> mujoco.MjModel:
         """Compile the spec on demand, caching the result. Raises if compilation fails.

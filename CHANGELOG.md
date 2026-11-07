@@ -2,6 +2,9 @@
 
 ## Fixes
 
+- Added opt-in named world-fixed body identity preservation through native rigid bodies and fixed joints
+  - Python `preserve_world_fixed_bodies` and repeatable CLI `--preserve-world-fixed-body` retain mass without changing default static conversion or making flexible descendants kinematic
+
 - Preserve double-precision quaternions throughout transform composition, narrowing only the final USD orientation
   - Avoids amplified near-identity angular errors and accumulated descendant position drift in articulated hierarchies
 

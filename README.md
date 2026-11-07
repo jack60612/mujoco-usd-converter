@@ -65,6 +65,14 @@ stage: Usd.Stage = Usd.Stage.Open(asset.path)
 usdex.core.saveStage(stage, comment="modified after conversion")
 ```
 
+World-welded bodies normally become static collider hierarchies. Applications
+that require a particular body's mass and runtime identity can opt in to a
+native rigid body constrained by a `UsdPhysics.FixedJoint`, without making
+its flexible descendants kinematic:
+`Converter(preserve_world_fixed_bodies=("trunk",))`, or repeat
+`--preserve-world-fixed-body trunk` on the CLI. Names are MJCF body names;
+unknown names are rejected. The empty default preserves static conversion.
+
 ## Loading the USD Asset
 
 Once your asset is saved to storage, it can be loaded into an OpenUSD Ecosystem application, including a custom build of MuJoCo itself.

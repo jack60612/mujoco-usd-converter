@@ -231,10 +231,7 @@ class TestExcludes(ConverterTestCase):
                 for first in source_geoms:
                     for second in endpoint_geoms(target):
                         actual.add(frozenset((first, second)))
-        excluded_bodies = {
-            frozenset((int(signature) >> 16, int(signature) & 0xFFFF))
-            for signature in model.exclude_signature
-        }
+        excluded_bodies = {frozenset((int(signature) >> 16, int(signature) & 0xFFFF)) for signature in model.exclude_signature}
         expected = {
             frozenset((first, second))
             for first, second in combinations(geom_ids.values(), 2)
